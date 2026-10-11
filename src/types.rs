@@ -22,87 +22,16 @@ use crate::reputation_nft::BadgeType;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-/// Yield earned by vouchers on full repayment, in basis points (200 = 2%).
 pub const DEFAULT_YIELD_BPS: i128 = 200;
-/// Fraction of stake burned when a borrower defaults, in basis points (5000 = 50%).
 pub const DEFAULT_SLASH_BPS: i128 = 5000;
-/// Basis-point denominator (10_000 = 100%).
-pub const BPS_DENOMINATOR: i128 = 10_000;
-/// Minimum stake amount, in stroops (50 stroops), required for non-zero yield at
-/// the default 2% rate. Amounts below this truncate to zero yield.
-/// 1 XLM = 10,000,000 stroops.
 pub const DEFAULT_MIN_YIELD_STAKE: i128 = 50;
-/// Referral bonus paid to the referrer on full repayment, in basis points.
-/// Issue #1247 specifies 10% of the referrer's first interest earned (1000 bps).
-pub const DEFAULT_REFERRAL_BONUS_BPS: u32 = 1000; // 10% of first loan interest
-/// Minimum age of a vouch before it can be used for a loan, in seconds (60 = 1 minute).
+pub const DEFAULT_REFERRAL_BONUS_BPS: u32 = 100; // 1% of loan amount
 pub const MIN_VOUCH_AGE: u64 = 60; // 1 minute
-/// Default minimum vouch age before loan eligibility, in seconds (24 hours).
-pub const DEFAULT_MIN_VOUCH_AGE_SECS: u64 = 24 * 60 * 60;
-/// Default maximum number of distinct vouchers per borrower.
 pub const DEFAULT_MAX_VOUCHERS: u32 = 100;
-/// Default minimum loan amount, in stroops (100,000 stroops = 0.01 XLM).
-/// 1 XLM = 10,000,000 stroops.
 pub const DEFAULT_MIN_LOAN_AMOUNT: i128 = 100_000;
-/// Default loan duration, in seconds (30 days).
 pub const DEFAULT_LOAN_DURATION: u64 = 30 * 24 * 60 * 60;
-/// Default payment grace period after a suspension, in seconds (3 days).
-pub const PAYMENT_GRACE_PERIOD: u64 = 3 * 24 * 60 * 60;
-/// Default maximum loan-to-stake ratio (150 = 150% — loan ≤ 1.5× total staked).
 pub const DEFAULT_MAX_LOAN_TO_STAKE_RATIO: u32 = 150;
-/// Default maximum loan-to-collateral ratio (50_000 = 50% — loan ≤ 0.5× total stake).
-pub const DEFAULT_MAX_LOAN_TO_COLLATERAL_RATIO: u32 = 50_000;
-/// Minimum elapsed time between vouch calls from the same address, in seconds (24 hours).
 pub const DEFAULT_VOUCH_COOLDOWN_SECS: u64 = 24 * 60 * 60; // 24 hours
-/// Default maximum number of vouchers that may back a single borrower.
-pub const DEFAULT_MAX_VOUCHERS_PER_BORROWER: u32 = 50;
-/// Default timelock delay for config changes, in seconds (7 days).
-pub const CONFIG_TIMELOCK_SECONDS: u64 = 7 * 24 * 60 * 60;
-/// Issue #1146: maximum number of pending entries a single borrower's
-/// withdrawal queue may hold. Requests beyond this cap are rejected
-/// (`ContractError::WithdrawalQueueFull`) instead of growing the queue's
-/// persistent-storage Vec without bound.
-pub const MAX_WITHDRAWAL_QUEUE_SIZE: u32 = 200;
-/// Issue #1146: target size of the "hot" per-(borrower, voucher, token)
-/// vouch-history window kept after an archival cutover.
-pub const MAX_HOT_VOUCH_HISTORY_ENTRIES: u32 = 20;
-/// Issue #1146: once the hot vouch-history window reaches this length, the
-/// oldest entries are cut over into a single `ArchivedVouchHistory` batch,
-/// bringing the hot window back down to `MAX_HOT_VOUCH_HISTORY_ENTRIES`.
-pub const VOUCH_HISTORY_ARCHIVE_TRIGGER_ENTRIES: u32 = 30;
-/// Issue #1179: target size of the "hot" per-(borrower, voucher, token)
-/// vouch audit-trail window kept after an archival cutover. Mirrors the
-/// `MAX_HOT_VOUCH_HISTORY_ENTRIES` bounding strategy used for `VouchHistory`.
-pub const MAX_HOT_VOUCH_AUDIT_TRAIL_ENTRIES: u32 = 20;
-/// Issue #1179: once the hot vouch audit-trail window reaches this length,
-/// the oldest entries are cut over into a single `ArchivedVouchAuditTrail`
-/// batch, bringing the hot window back down to `MAX_HOT_VOUCH_AUDIT_TRAIL_ENTRIES`.
-pub const VOUCH_AUDIT_TRAIL_ARCHIVE_TRIGGER_ENTRIES: u32 = 30;
-/// Issue #1146: maximum number of items returned by a single page of any
-/// `*_page` read function, regardless of the caller-requested `limit`.
-pub const MAX_PAGE_SIZE: u32 = 50;
-// ── Issue #1285: Soroban Persistent Storage TTL Constants ─────────────────────
-//
-// Soroban persistent entries have a TTL measured in ledgers (1 ledger ≈ 5 s).
-// Once the TTL lapses the entry is archived off the live ledger; any subsequent
-// read will trap unless the entry is restored first.  We therefore extend_ttl
-// on every hot write path so long-lived entries never silently disappear.
-//
-// Ledger rate: ~17_280 ledgers / day (5 s / ledger).
-//
-/// extend_ttl threshold for loan/vouch/queue entries (~30 days in ledgers).
-/// If the current TTL is already above this we skip the extend to save CPU.
-pub const PERSISTENT_TTL_THRESHOLD_LEDGERS: u32 = 30 * 17_280; // 518_400
-/// Target TTL for loan/vouch/queue entries after extension (~1 year in ledgers).
-pub const PERSISTENT_TTL_TARGET_LEDGERS: u32 = 365 * 17_280; // 6_307_200
-/// Target TTL for the instance storage (config/admins/paused/etc.) (~1 year).
-pub const INSTANCE_TTL_TARGET_LEDGERS: u32 = 365 * 17_280; // 6_307_200
-/// Threshold for instance TTL bumps (~30 days).
-pub const INSTANCE_TTL_THRESHOLD_LEDGERS: u32 = 30 * 17_280; // 518_400
-
-/// Default governance voting period for slash-threshold proposals, in seconds (7 days).
-pub const DEFAULT_VOTING_PERIOD_SECONDS: u64 = 7 * 24 * 60 * 60;
-/// Minimum delay before a timelocked governance action may be executed, in seconds (24 hours).
 pub const TIMELOCK_DELAY: u64 = 24 * 60 * 60;
 /// Default timelock delay before a designated successor admin may claim admin rights, in seconds (24 hours).
 pub const SUCCESSOR_CLAIM_TIMELOCK_SECS: u64 = 24 * 60 * 60;
@@ -407,116 +336,7 @@ pub enum LoanStatus {
     None,
     Active,
     Repaid,
-    /// #663: Borrower repaid some but less than partial_default_threshold_bps of total owed.
-    PartialDefault,
     Defaulted,
-    /// #664: Default was forgiven by admin.
-    ForgivenDefault,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum LoanStatusEx {
-    None,
-    Active,
-    Suspended,
-    Repaid,
-    PartialDefault,
-    Defaulted,
-    ForgivenDefault,
-}
-
-impl From<LoanStatus> for LoanStatusEx {
-    fn from(status: LoanStatus) -> Self {
-        match status {
-            LoanStatus::None => LoanStatusEx::None,
-            LoanStatus::Active => LoanStatusEx::Active,
-            LoanStatus::Repaid => LoanStatusEx::Repaid,
-            LoanStatus::PartialDefault => LoanStatusEx::PartialDefault,
-            LoanStatus::Defaulted => LoanStatusEx::Defaulted,
-            LoanStatus::ForgivenDefault => LoanStatusEx::ForgivenDefault,
-        }
-    }
-}
-
-/// Interest rate type for a loan.
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum RateType {
-    /// Fixed rate locked at disbursement (yield_bps from Config).
-    Fixed,
-    /// Variable rate tied to an external index; recalculated on each repayment.
-    Variable,
-}
-
-// ── Pause State Machine ───────────────────────────────────────────────────────
-
-/// Contract pause state for the Normal → Paused → Thawing → Normal state machine.
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum PauseMode {
-    /// Contract is operating normally.
-    None,
-    /// Contract is fully paused — all writes are blocked.
-    Paused,
-    /// Contract is thawing — only reads and withdrawals are allowed.
-    /// Automatically transitions to `None` after `thaw_duration` seconds.
-    Thawing,
-}
-
-/// Timestamps recorded when the contract enters or exits a thaw period.
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ThawState {
-    /// Ledger timestamp when `pause()` was called.
-    pub pause_timestamp: u64,
-    /// Duration of the thaw window in seconds (default 24 h = 86_400).
-    pub thaw_duration: u64,
-    /// Ledger timestamp when `begin_thaw()` was called.
-    pub thaw_start_timestamp: u64,
-}
-
-/// Duration of the thaw period in seconds (24 hours).
-pub const THAW_DURATION_SECS: u64 = 24 * 60 * 60;
-
-// ── Governance Proposal Status ─────────────────────────────────────────────────
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ProposalStatus {
-    /// Proposal is under active voting.
-    Active,
-    /// Proposal has passed and is executable.
-    Passed,
-    /// Proposal has been rejected.
-    Rejected,
-    /// Proposal voting period has expired.
-    Expired,
-    /// Proposal has been executed.
-    Executed,
-}
-
-// ── Sybil Resistance ─────────────────────────────────────────────────────────
-
-/// Estimated cost (in stroops) for an attacker to Sybil-attack a borrower's
-/// voucher configuration and achieve the same credit-score / governance weight.
-///
-/// Returned by `estimate_sybil_attack_cost` in `vouch.rs`.
-#[contracttype]
-#[derive(Clone)]
-pub struct SybilAttackCostEstimate {
-    /// Minimum aggregate stake (in stroops) an attacker must commit to match
-    /// the total reputation-weighted stake of the real voucher set.
-    pub min_stake_stroops: i128,
-    /// Minimum time (in seconds) the attacker must hold that stake before the
-    /// vouches become age-eligible for reputation credit.
-    pub min_lock_secs: u64,
-    /// Number of vouches in the legitimate set (for reference).
-    pub voucher_count: u32,
-    /// Total reputation-weighted stake of the current legitimate set.
-    pub total_weighted_stake: i128,
-    /// Ledger timestamp when this estimate was computed.
-    pub computed_at: u64,
 }
 
 // ── Issue #1074-1077: Multi-Token and Bridge Support ────────────────────────
@@ -604,8 +424,6 @@ pub enum DataKey {
     Deployer,                    // Address that deployed the contract; guards initialize
     SlashTreasury,               // i128 accumulated slashed funds
     Paused,                      // bool: true when contract is paused
-    PauseMode,                   // PauseMode enum: None, Paused, or Thawing
-    ThawState,                   // ThawState: pause and thaw timestamps
     BorrowerList,                // Vec<Address> of all borrowers who have ever requested a loan
     ReputationNft,               // Address of the ReputationNftContract
     MinStake,                    // i128 minimum stake amount per vouch
@@ -620,19 +438,13 @@ pub enum DataKey {
     RepaymentCount(Address), // borrower → u32 total successful repayments
     LoanCount(Address), // borrower → u32 total historical loans disbursed
     DefaultCount(Address), // borrower → u32 total defaults (slash + auto_slash + claim_expired)
-    /// Issue #1371: protocol-wide total default count, incremented alongside every
-    /// per-borrower `DefaultCount` update. Feeds `circuit_breaker::get_current_default_rate`.
-    TotalDefaultCount,
     ProtocolFeeBps,  // u32: protocol fee in basis points
     FeeTreasury,     // Address: recipient of collected protocol fees
     LastVouchTimestamp(Address), // voucher → u64 last vouch timestamp
-    VouchCooldownSecs, // u64 cooldown between vouch calls (default 24 hours)
     Timelock(u64),   // proposal_id → TimelockProposal
     TimelockCounter, // u64 monotonically increasing proposal ID
     Blacklisted(Address), // borrower → bool permanently banned
-    BlacklistReason(Address), // borrower → Bytes reason for blacklisting (Issue #1073)
     VoucherWhitelist(Address), // voucher → bool allowed to vouch
-    WhitelistEnabled, // bool: true when voucher whitelist is enabled (opt-in)
     ExtensionConsents(Address), // borrower → Vec<Address> vouchers who consented to extension
     SlashVote(Address), // borrower → SlashVoteRecord
     SlashVoteQuorum, // u32 quorum in basis points (e.g. 5000 = 50%)
@@ -1308,274 +1120,178 @@ pub struct CollateralPool {
     pub created_at: u64,
 }
 
-// ── Liquidity Mining (Issue #1257) ────────────────────────────────────────────
-
-/// Campaign type governing how rewards are distributed.
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum MiningCampaignType {
-    /// Rewards proportional to each participant's stake contribution.
-    ProportionalStake,
-    /// Flat reward per unique participating voucher (equal-split).
-    FlatPerVoucher,
-    /// Rewards proportional to voucher reputation score.
-    ReputationWeighted,
-}
-
-/// Lifecycle state of a liquidity mining campaign.
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum MiningCampaignStatus {
-    /// Accepting participants; rewards not yet claimable.
-    Active,
-    /// Campaign ended; rewards are claimable.
-    Ended,
-    /// Campaign was cancelled before ending; no rewards disbursed.
-    Cancelled,
-}
-
-/// Issue #1257: A liquidity mining campaign record stored on-chain.
-///
-/// Campaigns bootstrap liquidity by distributing rewards from `incentive_pool`
-/// to vouchers who participate during `[start_timestamp, end_timestamp)`.
-/// The reward each participant earns depends on the `campaign_type`.
-#[contracttype]
-#[derive(Clone)]
-pub struct MiningCampaign {
-    /// Unique campaign identifier (1-indexed monotonic counter).
-    pub campaign_id: u64,
-    /// Creator/sponsor of the campaign (must be an admin).
-    pub creator: Address,
-    /// Token used for both participation tracking and reward payout.
-    pub token: Address,
-    /// Total reward tokens deposited into the campaign pool, in stroops.
-    pub incentive_pool: i128,
-    /// Reward tokens already distributed so far, in stroops.
-    pub distributed: i128,
-    /// Campaign start ledger timestamp (inclusive).
-    pub start_timestamp: u64,
-    /// Campaign end ledger timestamp (exclusive).
-    pub end_timestamp: u64,
-    /// Distribution algorithm.
-    pub campaign_type: MiningCampaignType,
-    /// Lifecycle status.
-    pub status: MiningCampaignStatus,
-    /// Total accumulated participation weight (stake-seconds or voucher count).
-    pub total_participation: i128,
-    /// Number of unique participants who have recorded participation.
-    pub participant_count: u64,
-}
-
-// ── Issue #1238: Staking Pool with Yield Farming ──────────────────────────────
-
-/// Lifecycle state of a staking pool.
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum StakingPoolStatus {
-    /// Pool is open and accepting stakes.
-    Active,
-    /// Pool is processing withdrawals; no new stakes accepted.
-    Draining,
-    /// Pool is closed; all stakes have been returned.
-    Closed,
-}
-
-/// Issue #1238: A yield-bearing staking pool that lets capital holders earn
-/// returns sourced from the protocol's lending operations.
-///
-/// Stakers deposit tokens and receive a proportional share of yield accrued
-/// from the lending yield reserve over time.  Withdrawals are queued to
-/// prevent bank-run dynamics; the queue is drained when yield is collected.
-#[contracttype]
-#[derive(Clone)]
-pub struct StakingPool {
-    /// Unique pool identifier (1-indexed monotonic counter).
-    pub pool_id: u64,
-    /// Token staked in this pool (must be the protocol token or an allowed token).
-    pub token: Address,
-    /// Total tokens currently deposited by all stakers, in stroops.
-    pub total_staked: i128,
-    /// Accumulated yield per stroop (scaled by 1e12 for precision).
-    /// Updated each time yield is distributed from the lending reserve.
-    pub yield_per_token_scaled: i128,
-    /// Annual Percentage Yield in basis points, computed lazily on each distribution.
-    pub current_apy_bps: u32,
-    /// Total yield distributed to stakers since pool creation, in stroops.
-    pub total_yield_distributed: i128,
-    /// Timestamp of the last yield distribution event.
-    pub last_yield_timestamp: u64,
-    /// Pool lifecycle status.
-    pub status: StakingPoolStatus,
-    /// Timestamp when the pool was created.
-    pub created_at: u64,
-}
-
-/// Issue #1238: Per-staker position in a staking pool.
-/// Stored under `DataKey::StakingPoolStake(pool_id, staker)`.
-#[contracttype]
-#[derive(Clone)]
-pub struct StakerPosition {
-    /// Staker address.
-    pub staker: Address,
-    /// Amount currently staked, in stroops.
-    pub amount: i128,
-    /// Snapshot of `yield_per_token_scaled` at time of last claim/stake.
-    /// Used to compute pending rewards: (current - snapshot) * amount / 1e12.
-    pub yield_snapshot_scaled: i128,
-    /// Accumulated rewards not yet withdrawn, in stroops.
-    pub pending_rewards: i128,
-    /// Timestamp of the staker's last action (stake/unstake/claim).
-    pub last_action_timestamp: u64,
-    /// Whether there is a pending unstake in the withdrawal queue.
-    pub pending_unstake: bool,
-    /// Amount queued for unstaking (0 when `pending_unstake` is false).
-    pub queued_unstake_amount: i128,
-}
-
-// ── Issue #1247: Referral Rewards Program ─────────────────────────────────────
-
-/// Issue #1247: Referral leaderboard entry for a single referrer.
-#[contracttype]
-#[derive(Clone)]
-pub struct ReferralStats {
-    /// The referrer's address.
-    pub referrer: Address,
-    /// Number of referred borrowers who have completed at least one loan.
-    pub conversion_count: u64,
-    /// Total referral rewards earned (in stroops).
-    pub total_rewards_earned: i128,
-    /// Timestamp of the most recent referral conversion.
-    pub last_conversion_at: u64,
-}
-
 // ── Governance ────────────────────────────────────────────────────────────────
 
 #[contracttype]
 #[derive(Clone)]
 pub struct SlashVoteRecord {
-    /// Total stake (in stroops) that has voted to approve this slash.
-    /// 1 XLM = 10,000,000 stroops.
-    pub approve_stake: i128,
-    /// Total stake (in stroops) that has voted to reject this slash.
-    /// 1 XLM = 10,000,000 stroops.
-    pub reject_stake: i128,
-    /// Addresses that have already cast a vote on this proposal.
-    pub voters: Vec<Address>,
-    /// `true` once the slash has been auto-executed after quorum was reached.
-    pub executed: bool,
+    pub approve_stake: i128,    // total stake voting to approve slash
+    pub reject_stake: i128,     // total stake voting to reject slash
+    pub voters: Vec<Address>,   // addresses that have already voted
+    pub executed: bool,         // true once slash has been auto-executed
 }
 
-/// Slash escrow record holding slashed funds in 7-day escrow pending appeal.
+// ── Config ────────────────────────────────────────────────────────────────────
+
 #[contracttype]
 #[derive(Clone)]
-pub struct SlashEscrow {
-    pub borrower: Address,
-    pub loan_id: u64,
-    /// Slashed amount held in escrow (50% of total stake).
-    pub escrow_amount: i128,
-    /// Timestamp when escrow period expires (created_at + 7 days).
-    pub release_timestamp: u64,
-    /// Status: Pending, Approved, or Rejected.
-    pub status: AppealStatus,
+pub struct Config {
+    pub admins: Vec<Address>,
+    pub admin_threshold: u32,
+    pub token: Address,
+    pub allowed_tokens: Vec<Address>, // additional tokens accepted for loans/vouches
+    pub yield_bps: i128,
+    pub slash_bps: i128,
+    pub max_vouchers: u32,
+    pub min_loan_amount: i128,
+    pub loan_duration: u64,
+    pub max_loan_to_stake_ratio: u32,
+    pub grace_period: u64,
 }
 
-/// Status of a slash appeal.
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum AppealStatus {
-    /// Appeal in progress.
-    Pending,
-    /// Appeal approved; slash is overturned and funds returned to vouchers.
-    Approved,
-    /// Appeal rejected; funds are burned after escrow period.
-    Rejected,
-}
+// ── Data Types ────────────────────────────────────────────────────────────────
 
-/// Record of a slash appeal voted on by vouchers (Issue #841: escrow-based).
 #[contracttype]
 #[derive(Clone)]
-pub struct SlashEscrowAppealRecord {
+pub struct LoanRecord {
+    pub id: u64,
     pub borrower: Address,
-    pub loan_id: u64,
-    /// Total stake that voted to approve the appeal (overturn slash).
-    pub approve_stake: i128,
-    /// Total stake that voted to reject the appeal (keep slash).
-    pub reject_stake: i128,
-    /// Addresses that have already voted on this appeal.
-    pub voters: Vec<Address>,
-    /// Timestamp when appeal was created.
-    pub appeal_timestamp: u64,
+    pub co_borrowers: Vec<Address>,
+    pub amount: i128,        // total loan principal in stroops
+    pub amount_repaid: i128, // cumulative repayments received so far (principal + yield)
+    pub total_yield: i128,   // yield owed to vouchers, locked in at disbursement
+    pub repaid: bool,
+    pub defaulted: bool,
+    pub created_at: u64,                  // ledger timestamp
+    pub disbursement_timestamp: u64,      // ledger timestamp
+    pub repayment_timestamp: Option<u64>, // set once the loan is fully repaid
+    pub deadline: u64,                    // repayment deadline (ledger timestamp)
+    pub loan_purpose: soroban_sdk::String, // borrower-supplied purpose string
+    pub token_address: Address,           // token used for this loan
 }
 
 #[contracttype]
 #[derive(Clone)]
-pub struct DisputeRecord {
-    pub borrower: Address,
+pub struct VouchRecord {
     pub voucher: Address,
-    pub evidence_hash: soroban_sdk::BytesN<32>,
-    pub disputed_at: u64,
-    pub resolved: Option<bool>,
+    pub stake: i128,          // in stroops
+    pub vouch_timestamp: u64, // ledger timestamp when vouch was created; immutable after set
+    pub token: Address,       // token this stake is denominated in
 }
 
-/// Governance proposal to change the protocol slash threshold (`Config.slash_bps`).
 #[contracttype]
 #[derive(Clone)]
-pub struct SlashThresholdProposal {
+pub struct LoanPoolRecord {
+    pub pool_id: u64,
+    pub borrowers: Vec<Address>,
+    pub amounts: Vec<i128>,
+    pub created_at: u64,
+    pub total_disbursed: i128,
+}
+
+#[contracttype]
+#[derive(Clone)]
+pub struct TimelockProposal {
     pub id: u64,
+    pub action: TimelockAction,
     pub proposer: Address,
-    pub proposed_threshold: i128,
-    pub proposed_at: u64,
-    pub approve_votes: u32,
-    pub reject_votes: u32,
-    pub voters: Vec<Address>,
-    pub finalized: bool,
-}
-
-/// Config field targeted by an admin config-update proposal.
-#[contracttype]
-#[derive(Clone)]
-pub enum ConfigUpdateKey {
-    AdminThreshold,
-}
-
-/// Multi-sig admin proposal to update a config field.
-#[contracttype]
-#[derive(Clone)]
-pub struct ConfigUpdateProposal {
-    pub id: u64,
-    pub proposer: Address,
-    pub key: ConfigUpdateKey,
-    pub new_value: u32,
-    pub approvals: Vec<Address>,
+    pub eta: u64,
     pub executed: bool,
+    pub cancelled: bool,
 }
 
-// ── Admin Governance Queue with Multi-Signature Confirmation ─────────────────────
-
-/// Issue #893: Admin operation types for multi-tier approval thresholds.
-/// Different operations can require different numbers of admin approvals based on criticality.
 #[contracttype]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum AdminOperationType {
-    /// Low-risk operations (e.g., setting parameters like min_stake)
-    Standard,
-    /// Medium-risk operations (e.g., adding/removing tokens, admin changes)
-    HighRisk,
-    /// Critical operations (e.g., contract upgrade, pause, emergency actions)
-    Critical,
+#[derive(Clone)]
+pub enum TimelockAction {
+    Slash(Address),
+    SetConfig(Config),
 }
 
-/// Issue #893: Multi-tier admin approval thresholds for different operation types.
-/// Allows different admin operations to require different numbers of approvals.
+// ── Insurance Marketplace ─────────────────────────────────────────────────────
+
+/// Identifies a registered insurance provider.
+///
+/// `adapter_tag` is a short label (e.g. `b"static"`, `b"mock_a"`) that the
+/// on-chain router uses to select the `QuoteProvider` implementation at
+/// quote-fetch time.  In production this would be the handle of a real
+/// off-chain adapter; for the bundled fallback it is `b"static"`.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct MultiTierAdminThresholds {
-    /// Approvals required for standard operations (default: same as admin_threshold)
-    pub standard_threshold: u32,
-    /// Approvals required for high-risk operations (default: 2x standard)
-    pub high_risk_threshold: u32,
-    /// Approvals required for critical operations (default: all admins)
-    pub critical_threshold: u32,
+pub struct InsuranceProvider {
+    pub id: u64,
+    pub name: soroban_sdk::String,
+    /// Short tag selecting the quote-computation strategy.
+    /// `b"static"` → `StaticRateProvider` fallback (arithmetic only).
+    /// Any other value → treated as an off-chain adapter key (future work).
+    pub adapter_tag: soroban_sdk::Bytes,
+    pub active: bool,
+    pub registered_at: u64,
+}
+
+/// A coverage product offered by a specific provider.
+///
+/// `coverage_pct_bps` is the fraction of an insured loan amount that is paid
+/// out on a successful claim, expressed in basis points (10 000 = 100 %).
+///
+/// `premium_bps` is the annual premium charged to the borrower, also in bps.
+/// `StaticRateProvider` computes `premium = loan_amount * premium_bps / 10_000`.
+/// A real adapter would override this with its own pricing model.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InsuranceProduct {
+    pub id: u64,
+    pub provider_id: u64,
+    pub name: soroban_sdk::String,
+    /// Coverage fraction in basis points (10 000 = 100 %).
+    pub coverage_pct_bps: u32,
+    /// Annual premium fraction in basis points.
+    pub premium_bps: u32,
+    pub active: bool,
+}
+
+/// A concrete quote issued to a borrower for a specific product.
+///
+/// Quotes are immutable after issuance and are stored in persistent storage so
+/// they are visible to every contract instance behind the load-balancer.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InsuranceQuote {
+    pub id: u64,
+    pub product_id: u64,
+    pub provider_id: u64,
+    pub borrower: soroban_sdk::Address,
+    /// The loan principal this quote covers (in stroops).
+    pub loan_amount: i128,
+    /// Calculated coverage payout ceiling (in stroops).
+    pub coverage_amount: i128,
+    /// Calculated one-time premium due (in stroops).
+    pub premium_amount: i128,
+    /// Whether the borrower has paid the premium and activated this policy.
+    pub accepted: bool,
+    pub issued_at: u64,
+}
+
+/// Status of an insurance claim.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ClaimStatus {
+    Pending,
+    Approved,
+    Rejected,
+    Paid,
+}
+
+/// A filed insurance claim against an accepted quote.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InsuranceClaim {
+    pub id: u64,
+    pub quote_id: u64,
+    pub borrower: soroban_sdk::Address,
+    pub status: ClaimStatus,
+    pub payout_amount: i128,
+    pub filed_at: u64,
+    pub resolved_at: Option<u64>,
 }
 
 impl MultiTierAdminThresholds {

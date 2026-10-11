@@ -328,11 +328,13 @@ pub fn contract_error_meta(env: &Env, err: ContractError) -> (String, String) {
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-#[repr(u32)]
 pub enum ContractError {
     InsufficientFunds = 1,
+    /// Borrower already has an active (non-repaid, non-defaulted) loan.
     ActiveLoanExists = 2,
+    /// Total vouched stake overflowed i128.
     StakeOverflow = 3,
+    /// admin or token address must not be the zero address.
     ZeroAddress = 4,
     DuplicateVouch = 5,
     NoActiveLoan = 6,
@@ -351,6 +353,7 @@ pub enum ContractError {
     AlreadyInitialized = 19,
     VouchTooRecent = 20,
     VouchCooldownActive = 21,
+    BorrowerHasActiveLoan = 22,
     VoucherNotWhitelisted = 23,
     Blacklisted = 24,
     TimelockNotFound = 25,
@@ -358,6 +361,7 @@ pub enum ContractError {
     TimelockExpired = 27,
     NoVouchesForBorrower = 28,
     VoucherNotFound = 29,
+    /// Token address does not implement the SEP-41 token interface.
     InvalidToken = 30,
     AlreadyVoted = 31,
     SlashVoteNotFound = 32,
