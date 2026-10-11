@@ -1,40 +1,14 @@
-//! # Insurance Marketplace
-//!
-//! On-chain insurance marketplace for QuorumCredit microloans.
-//!
-//! ## Design
-//!
-//! ### Provider Adapter Pattern
-//!
-//! The central abstraction is [`QuoteProvider`], a trait that turns a product
-//! definition + loan amount into a `(coverage_amount, premium_amount)` pair.
-//! This is the explicit seam called for in issue #1218.
-//!
-//! Two concrete implementations are shipped:
-//!
-//! * [`StaticRateProvider`] — **explicit fallback**, labeled as such.  It
-//!   computes quotes using the product's stored `coverage_pct_bps` /
-//!   `premium_bps` constants with no external call.  This is the
-//!   `StaticRateProvider` that replaces the silent, comment-only "TODO: call
-//!   real API" arithmetic from the original TypeScript version.
-//!
-//! * [`MockProvider`] — test-only helper.  Takes an explicit rate table so
-//!   that two instances with *different* tables produce *different* quotes,
-//!   proving the adapter boundary is exercised by tests.  Only compiled under
-//!   `#[cfg(test)]`.
-//!
-//! In production a third adapter (`ExternalHttpProvider` or similar) would
-//! implement `QuoteProvider` and be selected via the provider's `adapter_tag`.
-//! The routing logic in `fetch_provider_quote` already has the dispatch point.
-//!
-//! ### Persistence
-//!
-//! All state — providers, products, quotes, claims — lives in Soroban's
-//! `persistent()` storage, keyed by the monotonic ID counters stored in
-//! `instance()`.  This is the same pattern used by loans, vouches, and pools.
-//! Because Soroban persistent storage is shared ledger state, every node in a
-//! validator set (the "multi-instance" deployment) sees the same data.
-
+/// Issue #1071: Insurance Fund Mechanism
+/// 
+/// When slashing cannot cover all voucher losses (tail-risk defaults),
+/// the insurance fund absorbs the shortfall. The fund is pre-funded by:
+/// 1. Admin contributions
+/// 2. A portion of protocol fees
+/// 3. Percentage of loan disbursement
+///
+/// Provides insurance pool helpers and claim processing.
+use soroban_sdk::{symbol_short, Address, Env, Vec};
+use crate::types::{Config, DataKey};
 use crate::errors::ContractError;
 use crate::types::{
     ClaimStatus, DataKey, InsuranceClaim, InsuranceProduct, InsuranceProvider, InsuranceQuote,
@@ -174,29 +148,30 @@ pub fn load_claim(env: &Env, claim_id: u64) -> Result<InsuranceClaim, ContractEr
 /// Dispatch to the correct `QuoteProvider` implementation based on the
 /// provider's `adapter_tag`.
 ///
-/// Currently two tags are supported:
-/// - `b"static"` → `StaticRateProvider` (explicit fallback)
+/// # Arguments
+/// * `env` - Soroban environment
+/// * `admin_signers` - Vector of admin addresses authorizing the contribution
+/// * `amount` - Amount to contribute in stroops
+/// * `config` - Current protocol configuration
 ///
-/// Any unrecognised tag **also** falls back to `StaticRateProvider` and emits
-/// a `ins_warn / fallback` event so operators can observe the downgrade.
-/// When a real off-chain adapter is integrated, add a new arm here.
-fn dispatch_quote_provider(
+/// # Errors
+/// * `InvalidAmount` if `amount <= 0`.
+/// * `InsuranceContributionTooLarge` (#1437) if `amount` exceeds
+///   `config.insurance_fund_max_contrib` (when that cap is non-zero) —
+///   a sanity check against fat-finger admin errors.
+///
+/// # Events
+/// Emits `("insurance", "contrib")` with `(amount, new_balance, admin_signer_count)`
+/// so manual top-ups leave an on-chain audit trail distinct from organic fee
+/// accrual via `collect_insurance_fee`.
+pub fn contribute_to_insurance_fund(
     env: &Env,
-    provider: &InsuranceProvider,
-    product: &InsuranceProduct,
-    loan_amount: i128,
-) -> (i128, i128) {
-    let static_tag = Bytes::from_slice(env, b"static");
-    if provider.adapter_tag == static_tag {
-        StaticRateProvider.compute_quote(product, loan_amount)
-    } else {
-        // Unrecognised adapter tag: degrade gracefully to StaticRateProvider.
-        // Emit a warning event so monitoring can detect the gap.
-        env.events().publish(
-            (symbol_short!("ins_warn"), symbol_short!("fallback")),
-            provider.id,
-        );
-        StaticRateProvider.compute_quote(product, loan_amount)
+    admin_signers: Vec<Address>,
+    amount: i128,
+    config: &Config,
+) -> Result<(), ContractError> {
+    if amount <= 0 {
+        return Err(ContractError::InvalidAmount);
     }
 }
 
@@ -204,19 +179,16 @@ fn dispatch_quote_provider(
 // Public marketplace functions
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Register a new insurance provider.
-///
-/// `adapter_tag` selects the quote-computation strategy.  Pass `b"static"` to
-/// use `StaticRateProvider`.  Any other value is reserved for future
-/// off-chain adapters.
-///
-/// Returns the new provider's ID.
-pub fn register_provider(
-    env: Env,
-    name: SorobanString,
-    adapter_tag: Bytes,
-) -> Result<u64, ContractError> {
-    let id = next_id(&env, &DataKey::InsuranceProviderCounter);
+    // Issue #1437: reject contributions above the configured sanity bound.
+    if config.insurance_fund_max_contrib > 0
+        && amount > config.insurance_fund_max_contrib
+    {
+        return Err(ContractError::InsuranceContributionTooLarge);
+    }
+
+    let current_balance: i128 = env.storage().instance()
+        .get(&DataKey::InsuranceFund)
+        .unwrap_or(0i128);
 
     let provider = InsuranceProvider {
         id,
@@ -230,52 +202,13 @@ pub fn register_provider(
         .persistent()
         .set(&DataKey::InsuranceProvider(id), &provider);
 
-    env.events()
-        .publish((symbol_short!("ins_prov"), symbol_short!("added")), id);
-
-    Ok(id)
-}
-
-/// Add a coverage product under an existing, active provider.
-///
-/// Returns the new product's ID.
-pub fn add_product(
-    env: Env,
-    provider_id: u64,
-    name: SorobanString,
-    coverage_pct_bps: u32,
-    premium_bps: u32,
-) -> Result<u64, ContractError> {
-    let provider = load_provider(&env, provider_id)?;
-    if !provider.active {
-        return Err(ContractError::ProviderInactive);
-    }
-
-    assert!(
-        coverage_pct_bps > 0 && coverage_pct_bps <= 10_000,
-        "coverage_pct_bps must be 1-10000"
+    // Issue #1437: emit an audit event for the manual top-up.
+    env.events().publish(
+        (symbol_short!("insurance"), symbol_short!("contrib")),
+        (amount, new_balance, admin_signers.len()),
     );
-    assert!(premium_bps > 0, "premium_bps must be > 0");
 
-    let id = next_id(&env, &DataKey::InsuranceProductCounter);
-
-    let product = InsuranceProduct {
-        id,
-        provider_id,
-        name,
-        coverage_pct_bps,
-        premium_bps,
-        active: true,
-    };
-
-    env.storage()
-        .persistent()
-        .set(&DataKey::InsuranceProduct(id), &product);
-
-    env.events()
-        .publish((symbol_short!("ins_prod"), symbol_short!("added")), id);
-
-    Ok(id)
+    Ok(())
 }
 
 /// Compute and persist a new quote for `borrower` against `product_id`.
@@ -493,10 +426,19 @@ pub fn get_provider(env: Env, provider_id: u64) -> Option<InsuranceProvider> {
         .get(&DataKey::InsuranceProvider(provider_id))
 }
 
-pub fn get_product(env: Env, product_id: u64) -> Option<InsuranceProduct> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::InsuranceProduct(product_id))
+    // Issue #1436: warn operators before the fund is fully depleted. The event
+    // fires only on the claim that pushes the balance across the threshold
+    // (i.e. it was at/above the threshold before this claim and is below now),
+    // so a depleted fund emits exactly one alert rather than one per claim.
+    let threshold = config.insurance_fund_low_bal_thresh;
+    if threshold > 0 && remaining_balance < threshold && current_balance >= threshold {
+        env.events().publish(
+            (symbol_short!("insurance"), symbol_short!("low_bal")),
+            (remaining_balance, threshold),
+        );
+    }
+
+    Ok(payout)
 }
 
 pub fn get_quote(env: Env, quote_id: u64) -> Option<InsuranceQuote> {
@@ -509,4 +451,109 @@ pub fn get_claim(env: Env, claim_id: u64) -> Option<InsuranceClaim> {
     env.storage()
         .persistent()
         .get(&DataKey::InsuranceClaim(claim_id))
+}
+
+#[cfg(test)]
+mod insurance_fund_hardening_tests {
+    //! Issue #1436 (low-balance alert) and Issue #1437 (contribution cap + event).
+    use super::*;
+    use crate::{QuorumCreditContract, QuorumCreditContractClient};
+    use soroban_sdk::testutils::{Address as _, Events};
+    use soroban_sdk::{vec, Address, Env};
+
+    fn setup() -> (Env, Address, Address, Config) {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let deployer = Address::generate(&env);
+        let admin = Address::generate(&env);
+        let token = env
+            .register_stellar_asset_contract_v2(admin.clone())
+            .address();
+        let contract_id = env.register_contract(None, QuorumCreditContract);
+        let client = QuorumCreditContractClient::new(&env, &contract_id);
+        client.initialize(&deployer, &vec![&env, admin.clone()], &1u32, &token);
+
+        let cfg = env.as_contract(&contract_id, || crate::helpers::config(&env));
+        (env, contract_id, admin, cfg)
+    }
+
+    #[test]
+    fn contribution_over_configured_cap_is_rejected() {
+        let (env, contract_id, admin, mut cfg) = setup();
+        cfg.insurance_fund_max_contrib = 1_000;
+
+        env.as_contract(&contract_id, || {
+            // Over the cap → rejected, no balance change.
+            let err = contribute_to_insurance_fund(
+                &env,
+                vec![&env, admin.clone()],
+                5_000,
+                &cfg,
+            )
+            .unwrap_err();
+            assert_eq!(err, ContractError::InsuranceContributionTooLarge);
+            assert_eq!(get_insurance_fund_balance(&env), 0);
+
+            // At the cap → accepted.
+            contribute_to_insurance_fund(&env, vec![&env, admin.clone()], 1_000, &cfg)
+                .expect("contribution at cap should succeed");
+            assert_eq!(get_insurance_fund_balance(&env), 1_000);
+        });
+    }
+
+    #[test]
+    fn contribution_emits_audit_event() {
+        let (env, contract_id, admin, cfg) = setup();
+
+        env.as_contract(&contract_id, || {
+            let before = env.events().all().events().len();
+            contribute_to_insurance_fund(&env, vec![&env, admin.clone()], 750, &cfg)
+                .expect("contribution should succeed");
+            assert!(
+                env.events().all().events().len() > before,
+                "contribute_to_insurance_fund must emit an event"
+            );
+        });
+    }
+
+    #[test]
+    fn low_balance_event_fires_exactly_on_threshold_crossing() {
+        let (env, contract_id, _admin, mut cfg) = setup();
+        cfg.insurance_fund_low_bal_thresh = 500;
+        cfg.insurance_max_payout_bps = 10_000; // allow full-shortfall payout
+
+        env.as_contract(&contract_id, || {
+            env.storage().instance().set(&DataKey::InsuranceFund, &1_000i128);
+
+            // First claim keeps balance at/above threshold (1000 -> 600): no alert.
+            let before = env.events().all().events().len();
+            claim_insurance_for_shortfall(&env, 400, &cfg).unwrap();
+            assert_eq!(get_insurance_fund_balance(&env), 600);
+            assert_eq!(
+                env.events().all().events().len(),
+                before,
+                "no alert while balance stays above threshold"
+            );
+
+            // Second claim crosses the threshold (600 -> 300): exactly one alert.
+            let before = env.events().all().events().len();
+            claim_insurance_for_shortfall(&env, 300, &cfg).unwrap();
+            assert_eq!(get_insurance_fund_balance(&env), 300);
+            assert_eq!(
+                env.events().all().events().len(),
+                before + 1,
+                "alert must fire on the claim that crosses the threshold"
+            );
+
+            // Third claim while already below threshold: no further alert.
+            let before = env.events().all().events().len();
+            claim_insurance_for_shortfall(&env, 100, &cfg).unwrap();
+            assert_eq!(
+                env.events().all().events().len(),
+                before,
+                "alert must not repeat once already below threshold"
+            );
+        });
+    }
 }

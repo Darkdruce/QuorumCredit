@@ -4,6 +4,10 @@ export interface ServerConfig {
   indexerDbPath: string;
   authSecret: string;
   tokenTtlSeconds: number;
+  apiRateLimits: {
+    windowMs: number;
+    tiers: { free: number; pro: number; enterprise: number };
+  };
   /** Bounded per-connection outgoing queue capacity before drop-oldest kicks in. */
   connectionQueueMax: number;
   /** How often the bridge polls the indexer DB for newly-inserted rows. */
@@ -43,6 +47,8 @@ export interface ServerConfig {
   sorobanRpc: {
     url: string | undefined;
     contractId: string | undefined;
+    /** Secret key of the keeper account authorized to call execute_recurring_payment. */
+    keeperSecretKey?: string;
   };
 }
 
@@ -121,6 +127,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     indexerDbPath: env.INDEXER_DB_PATH ?? "indexer.db",
     authSecret,
     tokenTtlSeconds: envInt("TOKEN_TTL_SECONDS", 300),
+    apiRateLimits: {
+      windowMs: envInt("API_RATE_LIMIT_WINDOW_MS", 60_000),
+      tiers: {
+        free: envInt("API_RATE_LIMIT_FREE", 100),
+        pro: envInt("API_RATE_LIMIT_PRO", 1_000),
+        enterprise: envInt("API_RATE_LIMIT_ENTERPRISE", 10_000),
+      },
+    },
     connectionQueueMax: envInt("CONN_QUEUE_MAX", 500),
     bridgePollIntervalMs: envInt("BRIDGE_POLL_INTERVAL_MS", 250),
     leaderLockTtlMs: envInt("LEADER_LOCK_TTL_MS", 5000),
@@ -143,6 +157,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     sorobanRpc: {
       url: env.SOROBAN_RPC_URL,
       contractId: env.QUORUM_CREDIT_CONTRACT_ID,
+      keeperSecretKey: env.SOROBAN_KEEPER_SECRET_KEY,
     },
   };
 }

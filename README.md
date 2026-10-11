@@ -209,6 +209,21 @@ Step 3: Initialize the contract ← SAME deployer keypair must sign this tx
 
 If steps 2 and 3 are not signed by the same keypair, `initialize` will panic and the contract remains uninitialized.
 
+## Documentation
+
+Project reference documentation is generated automatically from the Rust workspace and published to GitHub Pages on every merge to `main`.
+
+Visit the published docs at:
+
+https://ndifreke000.github.io/QuorumCredit/
+
+### Module Guides
+
+- [Loan Cart Guide](docs/loan-cart-guide.md) — batch loan staging, volume discounts, abandonment analytics
+- [Loan Priority & Waterfall](docs/loan-priority-waterfall.md) — senior/mezzanine/junior tranching and default-proceeds routing
+- [Loan Attribution Model](docs/loan-attribution-model.md) — heuristic performance attribution (40%/35%/15%/10%) and known limitations
+- [Credential Flow](docs/credential-flow.md) — sequence, swimlane and API-call diagrams for issuance, identity/document/challenge verification and proof export
+
 ### Deploy to Testnet
 
 ```bash
@@ -503,3 +518,12 @@ MIT
 - [Stellar Documentation](https://developers.stellar.org)
 - [Soroban Docs](https://soroban.stellar.org)
 - [Stellar Developer Discord](https://discord.gg/stellardev)
+
+## Handsoff notes
+
+<!-- handsoff-issue-1563 -->
+- #1563: Implement Gradual Rollout API for New Features
+
+<!-- handsoff-issue-1564 -->
+- #1564: Add API Request Fingerprinting for Fraud Detection
+

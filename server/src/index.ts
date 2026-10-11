@@ -7,12 +7,19 @@ import { EventStore } from "./bridge/eventStore.js";
 import { Bridge } from "./bridge/bridge.js";
 import { attachLoanSocketServer } from "./ws/loanSocketServer.js";
 import { attachMetricsWsServer } from "./ws/metricsWsServer.js";
+import { attachCredentialStatusWsServer } from "./ws/credentialStatusWsServer.js";
+import { withIdempotency, defaultIdempotencyStore } from "./http/idempotency.js";
 import { handleHttpRequest } from "./http/routes.js";
 import { metrics } from "./http/metricsRegistry.js";
 import * as insuranceMarketplace from "./insurance-marketplace.js";
 import { buildRevocationStore } from "./auth/jtiRevocationStore.js";
 import { buildSorobanRpcClient } from "./soroban/rpcClient.js";
 import { buildRecurringPaymentStore } from "./recurring/recurringPaymentStore.js";
+import { FacetedSearchService } from "./search/facetedSearch.js";
+import { buildApiRateLimiter } from "./auth/apiRateLimiter.js";
+import { loadApiKeyStore } from "./auth/apiKeyStore.js";
+// Issue #1751 — Multi-Region API Availability: start the health-check loop
+import { regionHealthChecker } from "./http/crossRegionReplication.js";
 
 export function buildBus(redisUrl: string | undefined): PubSubBus {
   if (redisUrl) return new RedisBus(redisUrl);
@@ -31,8 +38,11 @@ async function main(): Promise<void> {
   const bus = buildBus(config.redisUrl);
   const store = new EventStore(config.indexerDbPath);
   const revocationStore = buildRevocationStore(config.redisUrl);
-  const rpcClient = buildSorobanRpcClient(config.sorobanRpc.url, config.sorobanRpc.contractId);
+  const apiRateLimiter = buildApiRateLimiter(config.redisUrl, config.apiRateLimits);
+  const apiKeyStore = loadApiKeyStore();
+  const rpcClient = buildSorobanRpcClient(config.sorobanRpc.url, config.sorobanRpc.contractId, config.sorobanRpc.keeperSecretKey);
   const paymentStore = buildRecurringPaymentStore(config.redisUrl);
+  const searchService = new FacetedSearchService(store);
 
   const bridge = new Bridge({
     bus,
@@ -57,15 +67,20 @@ async function main(): Promise<void> {
       if (res.statusCode >= 500) metrics.incCounter("qc_http_request_errors_total");
     });
 
-    handleHttpRequest(req, res, {
+    // Issue #1744: Idempotency-Key handling for mutating requests.
+    withIdempotency(req, res, () => handleHttpRequest(req, res, {
       authSecret: config.authSecret,
       tokenTtlSeconds: config.tokenTtlSeconds,
       costAllocator: bridge.costAllocator,
       partitionGuard: bridge.partitionGuard,
       serviceVersion: config.serviceVersion,
       revocationStore,
+      apiRateLimiter,
+      apiKeyStore,
       rpcClient,
       paymentStore,
+      searchService,
+      eventStore: store,
     });
   });
 
@@ -75,6 +90,7 @@ async function main(): Promise<void> {
     store,
     authSecret: config.authSecret,
     connectionQueueMax: config.connectionQueueMax,
+    redisUrl: config.redisUrl,
   });
 
   attachMetricsWsServer({
@@ -83,9 +99,19 @@ async function main(): Promise<void> {
     store,
     authSecret: config.authSecret,
     connectionQueueMax: config.connectionQueueMax,
+    redisUrl: config.redisUrl,
+  });
+
+  // Issue #1743: real-time credential status updates.
+  attachCredentialStatusWsServer({
+    httpServer,
+    authSecret: config.authSecret,
   });
 
   bridge.start();
+
+  // Issue #1751: start the periodic region health-check sweep.
+  regionHealthChecker.start();
 
   httpServer.listen(config.port, () => {
     console.log(
@@ -96,11 +122,14 @@ async function main(): Promise<void> {
 
   const shutdown = async (): Promise<void> => {
     await bridge.stop();
+    regionHealthChecker.stop(); // Issue #1751
     httpServer.close();
     await bus.close();
     await revocationStore.close();
+    await apiRateLimiter.close();
     await rpcClient.close();
     await paymentStore.close();
+    defaultIdempotencyStore.close();
     process.exit(0);
   };
   process.on("SIGINT", () => void shutdown());

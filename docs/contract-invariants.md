@@ -155,6 +155,63 @@ each executed slash with the live `TotalDefaultCount`/`LoanCounter` figures.
 
 ---
 
+## I12 — Monthly Slash Index Consistency (Issue #1444)
+
+Every executed slash record with ID `slash_id` executed at timestamp `t` must be indexed in
+`DataKey::SlashesByMonth(t / MONTHLY_PERIOD_SECS)`.
+
+```
+forall slash_id in 1..=SlashRecordCounter:
+  record = SlashRecord(slash_id)
+  slash_id in SlashesByMonth(record.slash_timestamp / MONTHLY_PERIOD_SECS)
+```
+
+**Maintained by:** `governance::execute_slash` at slash execution time, and `governance::backfill_slashes_by_month`
+for one-time migration of historical slash records. Enables $O(\text{slashes-in-month})$ performance for `generate_slashing_report`.
+
+**Violation trigger:** A slash path that creates a `SlashRecord` without pushing `slash_id` into `SlashesByMonth`.
+
+---
+
+## I13 — Slash Is Idempotent Under Concurrent Repay Races (Issue #1485)
+
+When a `slash` call races a `repay` call on the same loan within a simulated network-partition
+window, the slash must be applied at most once. A loan that has already been fully repaid must
+not be slashed, and a loan that has already been slashed must not be slashed again.
+
+```
+count(executed slashes for loan) <= 1
+loan.status == Repaid  =>  no slash applied to that loan
+loan.status == Defaulted  =>  loan.amount_repaid < loan.amount + loan.total_yield
+```
+
+**Maintained by:** the `InvalidStateTransition` guard in `slash`/`lazy_slash` and the terminal
+status check in `repay`; both must re-read the loan record after any simulated delay before
+mutating state.
+
+**Violation trigger:** A slash path that reads the loan status before a delay and applies the
+slash after the loan has been repaid (or vice versa), producing a double-application or leaving
+the loan in an ambiguous status.
+
+---
+
+## I14 — Delayed Vouch After Insufficient-Vouch Slash Is Rejected (Issue #1485)
+
+A vouch message that is dropped or delayed and arrives after the borrower has already been
+slashed for insufficient vouches must not resurrect the loan or re-activate the borrower's
+vouching state.
+
+```
+loan.status == Defaulted (insufficient vouches)  =>  late vouch does not set loan.status == Active
+```
+
+**Maintained by:** the vouch handler rejecting vouches for borrowers whose loan is already in a
+terminal (`Repaid`/`Defaulted`) state.
+
+**Violation trigger:** A vouch path that accepts a late vouch and re-opens a slashed loan.
+
+---
+
 ## On-Chain Aggregate View Functions (Issue #1288)
 
 Two new read-only entrypoints expose the TVL and active-loan counters for composability:
@@ -173,5 +230,10 @@ allow other Soroban contracts to read QuorumCredit's protocol-wide TVL in a sing
 
 All invariants are checked by `verify_invariants(env, client, token, borrowers)` in
 `src/invariants_test.rs`. Call this helper after every state-changing operation in tests.
+
+Chaos and concurrency coverage for the slash/repay race (I13) and the delayed-vouch-after-slash
+case (I14) lives in `chaos_test.rs` and `concurrent_operations_test.rs`; these scenarios
+interleave `repay` and `slash` across simulated delays and assert the final state is consistent
+(no double-application of slash, no ambiguous loan status).
 
 See also: [threat-model.md](./threat-model.md)
